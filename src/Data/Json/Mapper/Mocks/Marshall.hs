@@ -14,3 +14,24 @@ class ToJSVal a where
 instance ToJSVal [Char] where
   toJSVal = undefined
   toJSValListOf = undefined
+
+instance ToJSVal Int where
+  toJSVal = undefined
+  toJSValListOf = undefined
+
+instance ToJSVal Float where
+  toJSVal = undefined
+  toJSValListOf = undefined
+
+instance ToJSVal Double where
+  toJSVal = undefined
+  toJSValListOf = undefined
+
+instance ToJSVal Char where
+  toJSVal = undefined
+  toJSValListOf = undefined
+
+instance ToJSVal Bool where
+  toJSVal = undefined
+  toJSValListOf = undefined
+

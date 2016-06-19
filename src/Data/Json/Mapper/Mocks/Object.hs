@@ -5,6 +5,10 @@ import Data.Json.Mapper.Mocks.Marshall
 
 data Object
 
+instance ToJSVal Object where
+  toJSVal = undefined
+  toJSValListOf = undefined
+
 create :: IO Object
 create = undefined
 

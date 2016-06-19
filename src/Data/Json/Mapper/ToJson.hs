@@ -8,6 +8,7 @@ import Control.Monad.State
 import Data.Json.Mapper.Args
 import GHC.Generics as G
 import System.IO.Unsafe (unsafePerformIO)
+import Unsafe.Coerce (unsafeCoerce)
 
 #if defined(ghcjs_HOST_OS)
 import GHCJS.Marshal
@@ -22,14 +23,6 @@ import qualified Data.Json.Mapper.Mocks.Object as O
 
 
 type MToJson v = ReaderT ToJsonArgs (State ToJsonContext) v
-
-data JS
-
-data HS
-
-data SerializeArgs v = SerializeArgs (Maybe String)
-
-trace x = seq (unsafePerformIO $ putStrLn x)
 
 nextIx :: MToJson Int
 nextIx = do
@@ -52,7 +45,7 @@ class ToJsonObjectMapper a where
     obj <- O.create
     return $ evalState (runReaderT (runProcess obj) args) initConvert
     where
-      runProcess obj = trace "step 0" $ gToJsonMapper obj () (G.from v)
+      runProcess obj = gToJsonMapper obj () (G.from v)
 
 class GToJsonObjectMapper f ctx | f -> ctx where
   gToJsonMapper :: O.Object -> ctx -> f a -> MToJson O.Object
@@ -61,10 +54,10 @@ instance GToJsonObjectMapper U1 () where
   gToJsonMapper o _ _ = return o
 
 instance GToJsonObjectMapper a () => GToJsonObjectMapper (M1 C f a) () where
-  gToJsonMapper o _ (M1 v) = trace "step1" $ gToJsonMapper o () v
+  gToJsonMapper o _ (M1 v) = gToJsonMapper o () v
 
 instance GToJsonObjectMapper a () => GToJsonObjectMapper (M1 D f a) () where
-  gToJsonMapper o _ (M1 v) = trace "step2" $ gToJsonMapper o () v
+  gToJsonMapper o _ (M1 v) = gToJsonMapper o () v
 
 instance (GToJsonObjectMapper a (), GToJsonObjectMapper b ()) => GToJsonObjectMapper (a :*: b) () where
   gToJsonMapper o _ (a :*: b) = do
@@ -74,31 +67,63 @@ instance (GToJsonObjectMapper a (), GToJsonObjectMapper b ()) => GToJsonObjectMa
 instance (Selector s, GToJsonObjectMapper a (Maybe String)) => GToJsonObjectMapper (M1 S s a) () where
   gToJsonMapper o _ rep@(M1 v) =
     case selName rep of
-    "" -> trace "setprop" $ gToJsonMapper o Nothing v
-    sel -> trace "setprop1" $ gToJsonMapper o (Just sel) v
+    "" -> gToJsonMapper o Nothing v
+    sel -> gToJsonMapper o (Just sel) v
 
-instance ToJSVal a =>  GToJsonObjectMapper (K1 i a) (Maybe String) where
-  gToJsonMapper o ctx (K1 v) =
+instance GToJsonObjectMapper (K1 i Int) (Maybe String) where
+  gToJsonMapper = jsValHelper
+
+instance GToJsonObjectMapper (K1 i Float) (Maybe String) where
+  gToJsonMapper = jsValHelper
+
+instance GToJsonObjectMapper (K1 i Double) (Maybe String) where
+  gToJsonMapper = jsValHelper
+
+instance GToJsonObjectMapper (K1 i Char) (Maybe String) where
+  gToJsonMapper = jsValHelper
+
+instance GToJsonObjectMapper (K1 i Bool) (Maybe String) where
+  gToJsonMapper = jsValHelper
+
+instance GToJsonObjectMapper (K1 i String) (Maybe String) where
+  gToJsonMapper = jsValHelper
+  
+jsValHelper :: (ToJSVal a) => O.Object -> (Maybe String) -> K1 i a b -> MToJson O.Object
+jsValHelper o ctx (K1 v) =
     case ctx of
     Nothing -> addToNextIx
     Just prop -> addAsProperty prop
 
     where
+      value = (unsafeToJSVal v)
       addToNextIx = do
         i <- nextIx
-        unsafeSetProp (S.pack $ show i) (unsafeToJSVal v) o
-      addAsProperty prop = unsafeSetProp (S.pack prop) (unsafeToJSVal v) o
+        unsafeSetProp (S.pack $ show i) value o
+      addAsProperty prop = unsafeSetProp (S.pack prop) value o
+
+instance {-# OVERLAPS #-} ToJsonObjectMapper v =>  GToJsonObjectMapper (K1 i v) (Maybe String) where
+  gToJsonMapper o ctx (K1 v) = do
+    args <- ask
+    let value = unsafeCoerce $ toJsonMapper args v
+    case ctx of
+      Nothing -> addToNextIx value
+      Just prop -> addAsProperty prop value
+    where
+      addToNextIx value = do
+        i <- nextIx
+        unsafeSetProp (S.pack $ show i) value o
+      addAsProperty prop value = unsafeSetProp (S.pack prop) value o      
 
 data V = V {a :: String, b :: String} deriving Generic
 
 data V2 = V2 { c :: String, d :: V} deriving Generic
 
 instance ToJsonObjectMapper V
--- instance ToJsonObjectMapper V2
+instance ToJsonObjectMapper V2
 
 val = gToJsonMapper undefined undefined (G.from $ V "" "kaiser")
 
--- val2 = gToJsonMapper undefined undefined (G.from $ V2 "z" (V "x" "y"))
+val2 = gToJsonMapper undefined undefined (G.from $ V2 "z" (V "x" "y"))
 
 
 
